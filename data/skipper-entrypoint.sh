@@ -19,5 +19,8 @@ fi
 
 usermod -G root,docker ${SKIPPER_USERNAME}
 
-su -m ${SKIPPER_USERNAME} -c "$@"
-
+if [ x"$SKIPPER_INTERACTIVE" == "xTrue" ]; then
+    su -m ${SKIPPER_USERNAME} --session-command "$@"
+else
+    su -m ${SKIPPER_USERNAME} -c "$@"
+fi
