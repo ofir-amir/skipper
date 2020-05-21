@@ -4,7 +4,6 @@ import logging
 import os
 import subprocess
 from contextlib import contextmanager
-import sys
 
 from retry import retry
 
@@ -36,7 +35,6 @@ def _run_nested(fqdn_image, environment, command, interactive, name, net, volume
     docker_cmd = ['docker', 'run']
     if interactive:
         docker_cmd += ['-i']
-        docker_cmd += ['-e', 'SKIPPER_INTERACTIVE=True']
     if name:
         docker_cmd += ['--name', name]
 
@@ -67,25 +65,8 @@ def _run_nested(fqdn_image, environment, command, interactive, name, net, volume
     if use_cache:
         docker_cmd += ['-e', 'SKIPPER_USE_CACHE_IMAGE=True']
 
-    docker_cmd = handle_volumes_bind_mount(docker_cmd, homedir, volumes, workspace)
-
-    if workdir:
-        docker_cmd += ['-w', workdir]
-    else:
-        docker_cmd += ['-w', '%(workdir)s' % dict(workdir=os.path.join(workspace, project))]
-
-    docker_cmd += ['--entrypoint', '/opt/skipper/skipper-entrypoint.sh']
-    docker_cmd += [fqdn_image]
-    docker_cmd += [' '.join(command)]
-
-    with _network(net):
-        ret = _run(docker_cmd)
-
-    return ret
-
-
-def handle_volumes_bind_mount(docker_cmd, homedir, volumes, workspace):
     volumes = volumes or []
+
     volumes.extend([
         '%(workspace)s:%(workspace)s:rw,Z' % dict(workspace=workspace),
         '%(homedir)s/.netrc:%(homedir)s/.netrc:ro' % dict(homedir=homedir),
@@ -96,11 +77,6 @@ def handle_volumes_bind_mount(docker_cmd, homedir, volumes, workspace):
     for volume in volumes:
         if ":" not in volume:
             raise ValueError("Volume entry is badly-formatted - %s" % volume)
-
-        # For OSX, map anything in /var/lib or /etc to /private
-        if sys.platform == 'darwin':
-            if volume.startswith('/etc/') or volume.startswith('/var/lib/'):
-                volume = '/private' + volume
 
         # If the local directory of a mount entry doesn't exist, docker will by
         # default create a directory in that path. Docker runs in systemd context,
@@ -117,7 +93,20 @@ def handle_volumes_bind_mount(docker_cmd, homedir, volumes, workspace):
                 pass
 
         docker_cmd += ['-v', volume]
-    return docker_cmd
+
+    if workdir:
+        docker_cmd += ['-w', workdir]
+    else:
+        docker_cmd += ['-w', '%(workdir)s' % dict(workdir=os.path.join(workspace, project))]
+
+    docker_cmd += ['--entrypoint', '/opt/skipper/skipper-entrypoint.sh']
+    docker_cmd += [fqdn_image]
+    docker_cmd += [' '.join(command)]
+
+    with _network(net):
+        ret = _run(docker_cmd)
+
+    return ret
 
 
 @contextmanager
