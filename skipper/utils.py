@@ -1,9 +1,12 @@
+import base64
 import glob
 import json
 import logging
+import os
 import subprocess
 from six.moves import http_client
 import requests
+from requests_bearer import HttpBearerAuth
 import urllib3
 
 
@@ -46,9 +49,12 @@ def local_image_exist(image, tag):
     return output != ''
 
 
-def remote_image_exist(registry, image, tag):
+def remote_image_exist(registry, image, tag, auth_token):
     urllib3.disable_warnings()
     url = IMAGE_TAGS_URL % dict(registry=registry, image=image)
+    headers = {"Accept": "application/vnd.docker.distribution.manifest.v2+json"}
+    if auth_token:
+        headers['Authorization'] = auth_token
     response = requests.get(url=url, verify=False)
 
     if response.status_code != http_client.OK:
@@ -75,21 +81,22 @@ def get_local_images_info(images):
     return images_info
 
 
-def get_remote_images_info(images, registry):
+def get_remote_images_info(images, registry, username, password):
     images_info = []
     for image in images:
-        images_info += get_remote_image_info(image, registry)
+        images_info += get_remote_image_info(image, registry, username, password)
     return images_info
 
 
-def get_remote_image_info(image, registry):
+def get_remote_image_info(image, registry, username, password):
     urllib3.disable_warnings()
     image_info = []
     url = IMAGE_TAGS_URL % dict(registry=registry, image=image)
-    response = requests.get(url=url, verify=False)
+    response = requests.get(url=url, verify=False, auth=HttpBearerAuth(username, password))
     info = response.json()
     if response.ok:
-        image_info += [[registry, image, tag] for tag in info['tags']]
+        if info['tags']:
+            image_info += [[registry, image, tag] for tag in info['tags']]
     else:
         if info['errors'][0]['code'] == 'NAME_UNKNOWN':
             pass
@@ -99,18 +106,19 @@ def get_remote_image_info(image, registry):
     return image_info
 
 
-def get_image_digest(registry, image, tag):
+def get_image_digest(registry, image, tag, username, password):
     urllib3.disable_warnings()
     url = MANIFEST_URL % dict(registry=registry, image=image, reference=tag)
     headers = {"Accept": "application/vnd.docker.distribution.manifest.v2+json"}
-    response = requests.get(url=url, headers=headers, verify=False)
+    response = requests.get(url=url, headers=headers, verify=False, auth=HttpBearerAuth(username, password))
     return response.headers['Docker-Content-Digest']
 
 
-def delete_image_from_registry(registry, image, tag):
-    digest = get_image_digest(registry, image, tag)
+def delete_image_from_registry(registry, image, tag, username, password):
+    digest = get_image_digest(registry, image, tag, username, password)
     url = MANIFEST_URL % dict(registry=registry, image=image, reference=digest)
-    response = requests.delete(url=url, verify=False)
+    headers = {"Accept": "application/vnd.docker.distribution.manifest.v2+json"}
+    response = requests.delete(url=url, headers=headers, verify=False, auth=HttpBearerAuth(username, password))
     if not response.ok:
         raise Exception(response.content)
 
@@ -137,3 +145,15 @@ def image_to_dockerfile(image):
 
 def dockerfile_to_image(dockerfile):
     return dockerfile.replace('Dockerfile.', '')
+
+
+def login_remote_registry(registry, ctx_object):
+    try:
+        docker_config = json.load(open('/'.join([os.path.expanduser('~'), '.docker/config.json'])))
+        auth = docker_config.get('auths', {}).get(registry, {}).get('auth')
+        if auth:
+            username, password = base64.b64decode(auth).decode().split(r':')
+            ctx_object['username'] = username
+            ctx_object['password'] = password
+    except Exception:
+        pass

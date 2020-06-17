@@ -29,7 +29,6 @@ def cli(ctx, registry, build_container_image, build_container_tag, build_contain
     """
     logging_level = logging.DEBUG if verbose else logging.INFO
     utils.configure_logging(name='skipper', level=logging_level)
-
     ctx.obj['registry'] = registry
     ctx.obj['build_container_image'] = build_container_image
     ctx.obj['build_container_net'] = build_container_net
@@ -40,6 +39,7 @@ def cli(ctx, registry, build_container_image, build_container_tag, build_contain
     ctx.obj['volumes'] = ctx.default_map.get('volumes')
     ctx.obj['workdir'] = ctx.default_map.get('workdir')
     ctx.obj['container_context'] = ctx.default_map.get('container_context')
+    utils.login_remote_registry(registry, ctx.obj)
 
 
 @cli.command()
@@ -134,7 +134,8 @@ def _push(ctx, force, image, image_name, namespace, tag):
         utils.logger.error('Failed to tag image: %(tag)s as fqdn', dict(tag=image_name, fqdn=fqdn_image))
         sys.exit(ret)
     repo_name = utils.generate_fqdn_image(None, namespace, image, tag=None)
-    images_info = utils.get_remote_images_info([repo_name], ctx.obj['registry'])
+    images_info = utils.get_remote_images_info([repo_name], ctx.obj['registry'],
+                                               ctx.obj.get('username'), ctx.obj.get('password'))
     tags = [info[-1] for info in images_info]
     if tag in tags:
         if not force:
@@ -170,7 +171,8 @@ def images(ctx, remote):
     if remote:
         _validate_global_params(ctx, 'registry')
         try:
-            images_info += utils.get_remote_images_info(images_names, ctx.obj['registry'])
+            images_info += utils.get_remote_images_info(images_names, ctx.obj['registry'],
+                                                        ctx.obj.get('username'), ctx.obj.get('password'))
         except Exception as exp:
             raise click.exceptions.ClickException('Got unknow error from remote registry %(error)s' % dict(error=exp.message))
 
@@ -190,7 +192,8 @@ def rmi(ctx, remote, image, tag):
     _validate_project_image(image)
     if remote:
         _validate_global_params(ctx, 'registry')
-        utils.delete_image_from_registry(ctx.obj['registry'], image, tag)
+        utils.delete_image_from_registry(ctx.obj['registry'], image, tag,
+                                         ctx.obj.get('username'), ctx.obj.get('password'))
     else:
         utils.delete_local_image(image, tag)
 

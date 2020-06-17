@@ -86,13 +86,20 @@ def _run_nested(fqdn_image, environment, command, interactive, name, net, volume
 
 def handle_volumes_bind_mount(docker_cmd, homedir, volumes, workspace):
     volumes = volumes or []
-    volumes.extend([
-        '%(workspace)s:%(workspace)s:rw,Z' % dict(workspace=workspace),
-        '%(homedir)s/.netrc:%(homedir)s/.netrc:ro' % dict(homedir=homedir),
-        '%(homedir)s/.gitconfig:%(homedir)s/.gitconfig:ro' % dict(homedir=homedir),
-        '/var/run/docker.sock:/var/run/docker.sock:Z',
-        '/opt/skipper/skipper-entrypoint.sh:/opt/skipper/skipper-entrypoint.sh:Z',
-    ])
+    base_volumes = [
+        '%(workspace)s:%(workspace)s:rw,Z' % dict(workspace=workspace),  # User workspace
+        '/var/lib/osmosis:/var/lib/osmosis:rw,Z',  # Stratoscale compatability
+        '/etc/docker:/etc/docker:ro',  # Local docker configuration
+        '%(homedir)s/.netrc:%(homedir)s/.netrc:ro' % dict(homedir=homedir),  # Github netrc info
+        '%(homedir)s/.gitconfig:%(homedir)s/.gitconfig:ro' % dict(homedir=homedir),  # git config
+        '/var/run/docker.sock:/var/run/docker.sock:Z',  # Docker socker
+        '%(homedir)s/.docker/config.json:%(homedir)s/.docker/config.json:ro' % dict(homedir=homedir),  # docker login
+        '/opt/skipper/skipper-entrypoint.sh:/opt/skipper/skipper-entrypoint.sh:Z',  # Skipper entrypoint
+    ]
+    for volume in base_volumes:
+        if os.path.exists(volume.split(":")[0]):
+            volumes.append(volume)
+
     for volume in volumes:
         if ":" not in volume:
             raise ValueError("Volume entry is badly-formatted - %s" % volume)
